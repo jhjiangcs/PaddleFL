@@ -29,6 +29,7 @@ const size_t FIXED_POINTER_SCALING_FACTOR = 16;
 
 class MpcOperators {
 public:
+
     virtual void add(const Tensor *lhs, const Tensor *rhs, Tensor *out, int axis = -1) = 0;
 
     virtual void add_grad(const Tensor *lhs, const Tensor *rhs, const Tensor *dout, Tensor *dx, Tensor *dy, int axis = -1) = 0;
@@ -41,11 +42,21 @@ public:
 
     virtual void mul(const Tensor *lhs, const Tensor *rhs, Tensor *out) = 0;
 
+    virtual void mat_mul_op(const Tensor *lhs, const Tensor *rhs, Tensor *out, 
+                            int x_num_col_dims, int y_num_col_dims) = 0;
+
+    virtual void mat_mul_grad_op(const Tensor *lhs, const Tensor *rhs, const Tensor *out, 
+                                 Tensor *dx, Tensor *dy, int x_num_col_dims, int y_num_col_dims) = 0;
+
     virtual void matmul(const Tensor *lhs,
                         const Tensor *rhs,
                         Tensor *out,
                         bool trans_lhs = false,
                         bool trans_rhs = false) = 0;
+
+    virtual void mean_op(const Tensor *in, Tensor *out) = 0;
+
+    virtual void mean_grad_op(const Tensor *dout, Tensor *dx) = 0;
 
     virtual void scale(const Tensor *lhs, const double factor, Tensor *out) = 0;
 
@@ -115,6 +126,9 @@ public:
     // reveal(tensor_in, tensor_to_print);
     // std::cout << tensor_to_print;
     virtual void reveal(const Tensor *in, Tensor* out) {};
+
+    virtual void online_share(size_t party, const Tensor *input, Tensor *out) = 0;
+
 };
 
 } // mpc

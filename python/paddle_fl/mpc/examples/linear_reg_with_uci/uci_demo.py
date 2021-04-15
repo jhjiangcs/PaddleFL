@@ -24,16 +24,20 @@ import paddle.fluid as fluid
 import paddle_fl.mpc as pfl_mpc
 import paddle_fl.mpc.data_utils.aby3 as aby3
 
+import process_data 
+
 role, server, port = sys.argv[1], sys.argv[2], sys.argv[3]
 pfl_mpc.init("aby3", int(role), "localhost", server, int(port))
 role = int(role)
 
 # data preprocessing
+process_data.generate_encrypted_data_online(role, server, port)
+
 BATCH_SIZE = 10
 
 feature_reader = aby3.load_aby3_shares(
-    "/tmp/house_feature", id=role, shape=(13, ))
-label_reader = aby3.load_aby3_shares("/tmp/house_label", id=role, shape=(1, ))
+    "./mpc_data/house_feature", id=role, shape=(13, ))
+label_reader = aby3.load_aby3_shares("./mpc_data/house_label", id=role, shape=(1, ))
 batch_feature = aby3.batch(feature_reader, BATCH_SIZE, drop_last=True)
 batch_label = aby3.batch(label_reader, BATCH_SIZE, drop_last=True)
 
@@ -58,15 +62,15 @@ optimizer = pfl_mpc.optimizer.SGD(learning_rate=0.001)
 optimizer.minimize(avg_loss)
 
 # loss file
-loss_file = "/tmp/uci_loss.part{}".format(role)
+loss_file = "./tmp/uci_loss.part{}".format(role)
 
 # train
 exe = fluid.Executor(place)
 exe.run(fluid.default_startup_program())
-epoch_num = 20
+epoch_num = 1
 
+start_time = time.time()
 for epoch_id in range(epoch_num):
-    start_time = time.time()
     step = 0
 
     # Method 1: feed data directly 
@@ -78,18 +82,16 @@ for epoch_id in range(epoch_num):
         step_start = time.time()
         mpc_loss = exe.run(feed=sample, fetch_list=[avg_loss])
         step_end = time.time()
-
-        if step % 5 == 0:
-            print('Epoch={}, Step={}, batch_cost={:.4f} s, Loss={},'.format(
-                epoch_id, step, (step_end - step_start), mpc_loss))
-            with open(loss_file, 'ab') as f:
-                f.write(np.array(mpc_loss).tostring())
         step += 1
-    end_time = time.time()
-    print('Mpc Training of Epoch={} Batch_size={}, epoch_cost={:.4f} s'
-          .format(epoch_id, BATCH_SIZE, (end_time - start_time)))
+        #if step == 1:
+        with open(loss_file, 'ab') as f:
+            f.write(np.array(mpc_loss).tostring())
 
-prediction_file = "/tmp/uci_prediction.part{}".format(role)
+        end_time = time.time()
+        print('Mpc Training of Epoch={} step_id={} Batch_size={}, epoch_cost={:.4f} s'
+              .format(epoch_num, step, BATCH_SIZE, (end_time - start_time)))
+'''
+prediction_file = "./tmp/uci_prediction.part{}".format(role)
 for sample in loader():
     prediction = exe.run(program=infer_program,
                          feed=sample,
@@ -97,3 +99,4 @@ for sample in loader():
     with open(prediction_file, 'ab') as f:
         f.write(np.array(prediction).tostring())
     break
+'''

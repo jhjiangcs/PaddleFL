@@ -26,6 +26,7 @@ limitations under the License. */
 #include "core/privc3/fixedpoint_tensor.h"
 #include "core/privc3/boolean_tensor.h"
 #include "core/common/paddle_tensor.h"
+#include "core/paddlefl_mpc/mpc_protocol/aby3_operators_impl/matrix_op.h"
 #include "core/paddlefl_mpc/mpc_protocol/aby3_operators_impl/elementwise_op.h"
 #include "core/paddlefl_mpc/mpc_protocol/aby3_operators_impl/common.h"
 
@@ -78,6 +79,7 @@ public:
         op_->sum(out_);
     }
 
+    // todo: refactor
     void mul(const Tensor *lhs, const Tensor *rhs, Tensor *out) override {
 
         auto lhs_tuple = from_tensor(lhs);
@@ -89,6 +91,14 @@ public:
         auto out_ = std::get<0>(out_tuple).get();
 
         lhs_->mul(rhs_, out_);
+    }
+
+    void mat_mul_op(const Tensor *lhs, const Tensor *rhs, Tensor *out, int x_num_col_dims, int y_num_col_dims) override {
+        aby3_op::mat_mul_op(lhs, rhs, out, x_num_col_dims, y_num_col_dims);
+    }
+
+    void mat_mul_grad_op(const Tensor *lhs, const Tensor *rhs, const Tensor *dout, Tensor *dx, Tensor *dy, int x_num_col_dims, int y_num_col_dims) override {
+        aby3_op::mat_mul_grad_op(lhs, rhs, dout, dx, dy, x_num_col_dims, y_num_col_dims);
     }
 
     void matmul(const Tensor *lhs, const Tensor *rhs, Tensor *out,
@@ -103,6 +113,27 @@ public:
         auto out_ = std::get<0>(out_tuple).get();
 
         lhs_->mat_mul(rhs_, out_, trans_lhs, trans_rhs);
+    }
+
+    void mean_op(const Tensor *in, Tensor *out) override {
+        double scale_factor = 1.0 / (in->numel() / aby3_op::SHARE_NUM);
+        sum(in, out);
+        scale(out, scale_factor, out);
+    }
+
+    void mean_grad_op(const Tensor *dout, Tensor *dx) override {
+        auto dout_data = dout->data<int64_t>();
+        auto dx_data = dx->data<int64_t>();
+        int dx_size = dx->numel() / aby3_op::SHARE_NUM;
+        for (size_t i = 0; i < dx_size; ++i) {
+            dx_data[i] = dout_data[0];
+        }
+        for (size_t i = dx_size; i < dx->numel(); ++i) {
+            dx_data[i] = dout_data[1];
+        }
+
+        double scale_factor = 1.0 / dx_size;
+        scale(dx, scale_factor, dx);
     }
 
     void scale(const Tensor *lhs, const double factor, Tensor *out) override {
@@ -415,6 +446,18 @@ public:
                        [](int64_t in) {
                            return in / pow(2, ABY3_SCALING_FACTOR); });
     };
+
+    void online_share(size_t party, 
+                      const Tensor *input,
+                      Tensor *out) {
+        PaddleTensor input_(ContextHolder::device_ctx(), *input);
+        input_.from_float_point_type<float>(*input, ABY3_SCALING_FACTOR);
+
+        auto out_tuple = from_tensor(out);
+        auto out_ = std::get<0>(out_tuple).get();
+
+        FixedTensor::online_share(party, &input_, out_);
+    }
 
 private:
     template <typename T>
